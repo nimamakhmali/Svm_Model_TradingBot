@@ -8,11 +8,13 @@ import matplotlib.pyplot as plt
 class Svm_Trader:
     def __init__(self, 
                  lEMAs:list[int],
-                 lSTCs:list[int]
-                 ) -> None:
+                 lSTCs:list[int],
+                 TH:float) -> None:
+        assert TH > 0, 'TH Must Be A Positive Float'
         self.lEMAs = lEMAs
         self.lSTCs = lSTCs
-
+        self.TH    = TH
+        
     def EMA(self,
             DF:pd.DataFrame,
             a:int=1) -> tuple[pd.DataFrame, list[str]]:
@@ -34,7 +36,17 @@ class Svm_Trader:
             FNs.append(f'STC({lSTC})')
         return DF, FNs   
 
-
+    def processDataset(self,
+                       DF:pd.DataFrame) -> tuple[pd.DataFrame,
+                                                 list[str]]:
+        DF, FNs1 = self.EMA(DF)
+        DF, FNs2 = self.STC(DF)
+        FNS = FNs1 + FNs2
+        DF.loc[:, 'r'] = DF.loc[:, 'Close'] / DF.loc[:, 'Open'] - 1
+        DF.loc[:, 'CC'] = np.where(DF.loc[:, 'r'] < -self.TH / 100, 0, np.nan)
+        DF.loc[:, 'CC'] = np.where(DF.loc[:, 'r'] > self.TH / 100, 2, DF.loc[:, 'CC'])
+        DF.loc[:, 'CC'].fillna(value=1, inplace=True)
+        print('END')
 
 
 def Fetch(Ticker:str, Start:str, End:str) -> pd.DataFrame:
@@ -61,5 +73,12 @@ def Fetch(Ticker:str, Start:str, End:str) -> pd.DataFrame:
         DF.index = pd.to_datetime(DF.index)
     return DF
 
+DF = Fetch('TSLA', '2020-01-01', '2021-01-01')
 
+lEMAs = [15]
+lSTCs = [21]
+TH = 0.8    # /100
 
+Trader = Svm_Trader(lEMAs, lSTCs, TH)
+
+Trader.processDataset(DF)
