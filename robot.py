@@ -15,23 +15,24 @@ class Svm_Trader:
 
     def EMA(self,
             DF:pd.DataFrame,
-            a:int=1) -> pd.DataFrame:
+            a:int=1) -> tuple[pd.DataFrame, list[str]]:
         FNs = []
         for lEMA in self.lEMAs:
             Alpha = (1 + a) / (lEMA + a) 
             DF.loc[:, f'EMA({lEMA})'] = DF.loc[:, 'Close'].ewm(alpha=Alpha).mean()
-            FNs.append(f'EMA({lEMA})')
-        return DF
+            DF.loc[:, 'f-EMA({lEMA})'] =  DF.loc[:, 'close'] /  DF.loc[:, f'EMA({lEMA})']
+            FNs.append('f-EMA({lEMA}) - 1')
+        return DF, FNs
 
     def STC(self,
-            DF:pd.DataFrame) -> pd.DataFrame:
+            DF:pd.DataFrame) -> tuple[pd.DataFrame, list[str]]:
         FNs = []
         for lSTC in self.lSTCs:
             LL = DF.loc[:, 'Low'].rolling(window=lSTC).min() 
             HH = DF.loc[:, 'High'].rolling(window=lSTC).max() 
             DF.loc[:, f'STC({lSTC})'] = 100 * (DF.loc[:, 'Close'] - LL) / (HH - LL)
             FNs.append(f'STC({lSTC})')
-        return DF   
+        return DF, FNs   
 
 
 
