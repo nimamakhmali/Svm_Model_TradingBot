@@ -4,7 +4,6 @@ import pandas as pd
 import yfinance as yf
 import matplotlib.pyplot as plt
 
-
 class Svm_Trader:
     def __init__(self, 
                  lEMAs:list[int],
@@ -22,8 +21,8 @@ class Svm_Trader:
         for lEMA in self.lEMAs:
             Alpha = (1 + a) / (lEMA + a) 
             DF.loc[:, f'EMA({lEMA})'] = DF.loc[:, 'Close'].ewm(alpha=Alpha).mean()
-            DF.loc[:, 'f-EMA({lEMA})'] =  DF.loc[:, 'close'] /  DF.loc[:, f'EMA({lEMA})']
-            FNs.append('f-EMA({lEMA}) - 1')
+            DF.loc[:, f'f-EMA({lEMA})'] = DF.loc[:, 'Close'] / DF.loc[:, f'EMA({lEMA})'] - 1
+            FNs.append(f'f-EMA({lEMA})')
         return DF, FNs
 
     def STC(self,
