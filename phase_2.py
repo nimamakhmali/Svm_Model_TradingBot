@@ -7,6 +7,7 @@ import sklearn.metrics as met
 import matplotlib.pyplot as plt
 import sklearn.preprocessing as pp
 import sklearn.model_selection as ms
+import os
 
 class svmTrader:
     def __init__(self,
@@ -57,5 +58,75 @@ class svmTrader:
         TNs = ['CC(t+1)']     
         DF.dropna(axis=0, inplace=True)
         return DF, FNs, TNs
-    
-                              
+
+    def Fit(self,
+            trDF:pd.DataFrame,
+            vaDF:pd.DataFrame,
+            H:dict) -> None:
+        trDF, FNs, TNs = self.ProcessDataset(trDF)
+        vaDF, FNs, TNs = self.ProcessDataset(vaDF)
+        trX0 = trDF.loc[:, FNs].to_numpy()
+        vaX0 = vaDF.loc[:, FNs].to_numpy()
+        trY = trDF.loc[:, TNs[0]].to_numpy()
+        vaY = vaDF.loc[:, TNs[0]].to_numpy()
+        self.Scaler = pp.StandardScaler()
+        trX = self.Scaler.fit_transform(trX0)
+        vaX = self.Scaler.transform(vaX0)
+        BestP = None
+        BestF1ma = 0
+        for P in ms.ParameterGrid(H):
+            Model = sv.SVC(**P, random_state=0)
+            Model.fit(trX, trY)
+            vaP = Model.predict(vaX)
+            vaF1ma = 100 * met.f1_score(vaY, vaP, average='macro')
+            print(f'{P}: {vaF1ma:.2f} %')
+            if vaF1ma > BestF1ma:
+                BestP = P
+                BestF1ma = vaF1ma
+        print(f'Best Hyperparameters: {P}')
+        print(f'Best Validation F1 Score Macro Average: {BestF1ma:.2f} %')
+        self.Model = sv.SVC(**BestP, random_state=0)
+        self.Model.fit(trX, trY)
+
+
+
+def Fetch(Ticker:str, Start:str, End:str) -> pd.DataFrame:
+    if not os.path.exists(path='Data'):
+        os.mkdir(path='Data')
+    SavePath = f'Data/{Ticker}-{Start}-{End}.csv'
+    if not os.path.exists(path=SavePath):
+        DF = yf.download(tickers=Ticker,
+                         start=Start,
+                         end=End,
+                         interval='1d')
+        if len(DF) > 0:
+            DF.to_csv(path_or_buf=SavePath,
+                      sep=',',
+                      index=True,
+                      index_label='Date',
+                      encoding='UTF-8')
+    else:
+        DF = pd.read_csv(filepath_or_buffer=SavePath,
+                         sep=',',
+                         header=0,
+                         index_col='Date',
+                         encoding='UTF-8')
+        DF.index = pd.to_datetime(DF.index)
+    return DF
+
+
+trDF = Fetch('TSLA')
+vaDF = Fetch('TSLA')
+
+lEMAs = [15]
+lSTCs = [21]
+TH = 0.008
+H = {'C': [0.9, 1, 1.1],
+     'kernel': ['rbf', 'linear', 'poly'],
+     'gamma': ['scale'],
+     'coef0': [-0.2, 0, +0.2],
+     'class_weight': ['balanced'],
+     'max_iter': [-1, 500, 700]}
+
+Trader = svmTrader(lEMAs, lSTCs, TH)
+Trader.Fit(trDF, vaDF, H)
