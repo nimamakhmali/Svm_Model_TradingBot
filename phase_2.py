@@ -43,4 +43,19 @@ class svmTrader:
 
     def ProcessDataset(self,
                        DF:pd.DataFrame) -> tuple[pd.DataFrame,
-                                                 list[str]]:                                    
+                                                 list[str],
+                                                 list[str]]: 
+        DF, FNs1 = self.EMA(DF)
+        DF, FNs2 = self.STC(DF)
+        FNs = FNs1 + FNs2
+        DF.loc[:, 'r'] = DF.loc[:, 'Close'] / DF.loc[:, 'Open'] - 1
+        DF.loc[:, 'CC'] = np.where(DF.loc[:, 'r'] < -self.TH / 100, 0, np.nan)
+        DF.loc[:, 'CC'] = np.where(DF.loc[:, 'r'] > self.TH / 100, 2, DF.loc[:, 'CC'])
+        DF.loc[:, 'CC'].fillna(value=1, inplace=True)
+        DF.loc[:, 'r(t+1)'] = DF.loc[:, 'r'].shift(periods=-1)
+        DF.loc[:, 'CC(t+1)'] = DF.loc[:, 'CC'].shift(periods=-1)
+        TNs = ['CC(t+1)']     
+        DF.dropna(axis=0, inplace=True)
+        return DF, FNs, TNs
+    
+                              
