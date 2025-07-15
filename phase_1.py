@@ -79,5 +79,4 @@ lSTCs = [21]
 TH = 0.8    # /100
 
 Trader = Svm_Trader(lEMAs, lSTCs, TH)
-
 Trader.processDataset(DF)
