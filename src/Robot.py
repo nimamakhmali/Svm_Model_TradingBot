@@ -211,12 +211,12 @@ def Fetch(Ticker: str, Start: str, End: str) -> pd.DataFrame:
     return DF
 
 trDF = Fetch('BTC-USD', '2017-01-01', '2020-01-01')
-vaDF = Fetch('BTC-USD', '2020-01-01', '2022-01-01')
-teDF = Fetch('BTC-USD', '2022-01-01', '2023-07-07')
+vaDF = Fetch('BTC-USD', '2020-01-01', '2024-01-01')
+teDF = Fetch('BTC-USD', '2022-01-01', '2025-07-19')
 
 lEMAs = [15, 35]
 lSTCs = [10, 21]
-TH = 1
+TH = 0.8
 ntd = 252.03
 rfr = 10
 
