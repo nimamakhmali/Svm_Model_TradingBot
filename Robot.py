@@ -1,4 +1,4 @@
-import os as os
+import os
 import numpy as np
 import pandas as pd
 import yfinance as yf
@@ -9,18 +9,14 @@ import sklearn.preprocessing as pp
 import sklearn.model_selection as ms
 
 class svmTrder:
-    def __init__(self,
-                 lEMAs:list[int],
-                 lSTCs:list[int],
-                 TH:float,
-                 ntd:float,
-                 rfr:float) -> None:
+    def __init__(self, lEMAs: list[int], lSTCs: list[int], TH: float, ntd: float, rfr: float) -> None:
         assert TH > 0, 'TH Must Be A Positive Float'
         self.lEMAs = lEMAs
         self.lSTCs = lSTCs
         self.TH = TH
         self.ntd = ntd
         self.rfr = rfr
+
     def EMA(self, DF: pd.DataFrame, a: int = 1) -> tuple[pd.DataFrame, list[str]]:
         FNs = []
         for lEMA in self.lEMAs:
@@ -31,47 +27,49 @@ class svmTrder:
             FNs.append(f'f-EMA({lEMA})')
         return DF, FNs
 
-    def STC(self,
-            DF:pd.DataFrame) -> tuple[pd.DataFrame,
-                                      list[str]]:
+    def STC(self, DF: pd.DataFrame) -> tuple[pd.DataFrame, list[str]]:
         FNs = []
         for lSTC in self.lSTCs:
-            LL = DF.loc[:, 'Low'].rolling(window=lSTC).min()
-            HH = DF.loc[:, 'High'].rolling(window=lSTC).max()
-            DF.loc[:, f'STC({lSTC})'] = 100 * (DF.loc[:, 'Close'] - LL) / (HH - LL)
+            LL = DF['Low'].rolling(window=lSTC).min()
+            HH = DF['High'].rolling(window=lSTC).max()
+            DF[f'STC({lSTC})'] = 100 * (DF['Close'] - LL) / (HH - LL)
             FNs.append(f'STC({lSTC})')
         return DF, FNs
-    def ProcessDataset(self,
-                       DF:pd.DataFrame) -> tuple[pd.DataFrame,
-                                                 list[str],
-                                                 list[str]]:
+
+    def ProcessDataset(self, DF: pd.DataFrame) -> tuple[pd.DataFrame, list[str], list[str]]:
+        DF = DF.copy()
         DF, FNs1 = self.EMA(DF)
         DF, FNs2 = self.STC(DF)
         FNs = FNs1 + FNs2
-        DF.loc[:, 'r'] = DF.loc[:, 'Close'] / DF.loc[:, 'Open'] - 1
-        DF.loc[:, 'CC'] = np.where(DF.loc[:, 'r'] < -self.TH / 100, 0, np.nan)
-        DF.loc[:, 'CC'] = np.where(DF.loc[:, 'r'] > self.TH / 100, 2, DF.loc[:, 'CC'])
-        DF.loc[:, 'CC'].fillna(value=1, inplace=True)
-        DF.loc[:, 'r(t+1)'] = DF.loc[:, 'r'].shift(periods=-1)
-        DF.loc[:, 'CC(t+1)'] = DF.loc[:, 'CC'].shift(periods=-1)
+
+        DF['r'] = DF['Close'] / DF['Open'] - 1
+        DF['CC'] = np.where(DF['r'] < -self.TH / 100, 0, np.nan)
+        DF['CC'] = np.where(DF['r'] > self.TH / 100, 2, DF['CC'])
+        DF['CC'] = DF['CC'].fillna(value=1)
+
+        DF['r(t+1)'] = DF['r'].shift(periods=-1)
+        DF['CC(t+1)'] = DF['CC'].shift(periods=-1)
         TNs = ['CC(t+1)']
+
         DF.dropna(axis=0, inplace=True)
         return DF, FNs, TNs
-    def Fit(self,
-            trDF:pd.DataFrame,
-            vaDF:pd.DataFrame,
-            H:dict) -> None:
+
+    def Fit(self, trDF: pd.DataFrame, vaDF: pd.DataFrame, H: dict) -> None:
         trDF, FNs, TNs = self.ProcessDataset(trDF)
         vaDF, FNs, TNs = self.ProcessDataset(vaDF)
-        trX0 = trDF.loc[:, FNs].to_numpy()
-        vaX0 = vaDF.loc[:, FNs].to_numpy()
-        trY = trDF.loc[:, TNs[0]].to_numpy()
-        vaY = vaDF.loc[:, TNs[0]].to_numpy()
+
+        trX0 = trDF[FNs].to_numpy()
+        vaX0 = vaDF[FNs].to_numpy()
+        trY = trDF[TNs[0]].to_numpy()
+        vaY = vaDF[TNs[0]].to_numpy()
+
         self.Scaler = pp.StandardScaler()
         trX = self.Scaler.fit_transform(trX0)
         vaX = self.Scaler.transform(vaX0)
+
         BestP = None
         BestF1ma = 0
+
         for P in ms.ParameterGrid(H):
             Model = sv.SVC(**P, random_state=0)
             Model.fit(trX, trY)
@@ -81,37 +79,41 @@ class svmTrder:
             if vaF1ma > BestF1ma:
                 BestP = P
                 BestF1ma = vaF1ma
-        print(f'Best Hyperparameters: {P}')
+
+        print(f'Best Hyperparameters: {BestP}')
         print(f'Best Validation F1 Score Macro Average: {BestF1ma:.2f} %')
         self.Model = sv.SVC(**BestP, random_state=0)
         self.Model.fit(trX, trY)
-    def Sharpe(self,
-               Returns:np.ndarray) -> float:
+
+    def Sharpe(self, Returns: np.ndarray) -> float:
         EDR = Returns.mean()
         Variance = Returns.var()
         m = self.ntd * EDR - self.rfr / 100
         s = (self.ntd * Variance) ** 0.5
-        sharpe = m / s
-        return sharpe
-    def Sortino(self,
-                Returns:np.ndarray) -> float:
+        return m / s
+
+    def Sortino(self, Returns: np.ndarray) -> float:
         EDR = Returns.mean()
         m = self.ntd * EDR - self.rfr / 100
         SemiVariance = np.power(Returns[Returns < EDR] - EDR, 2).mean()
         s = (self.ntd * SemiVariance) ** 0.5
-        sortino = m / s
-        return sortino
-    def Evaluate(self,
-                 DF:pd.DataFrame,
-                 Dataset:str) -> None:
+        return m / s
+
+    def Evaluate(self, DF: pd.DataFrame, Dataset: str) -> None:
         DF, FNs, TNs = self.ProcessDataset(DF)
-        X0 = DF.loc[:, FNs].to_numpy()
-        Y = DF.loc[:, TNs[0]].to_numpy()
+        if len(DF) == 0:
+            print(f'[WARNING] Dataset {Dataset} is empty after processing.')
+            return
+
+        X0 = DF[FNs].to_numpy()
+        Y = DF[TNs[0]].to_numpy()
         X = self.Scaler.transform(X0)
         P = self.Model.predict(X)
-        CR = met.classification_report(Y, P, target_names=['Sell', 'Hold', 'Buy'])
+
+        CR = met.classification_report(Y, P, labels=[0, 1, 2], target_names=['Sell', 'Hold', 'Buy'])
+
         nD = Y.size
-        tickerReturns = DF.loc[:, 'r(t+1)'].to_numpy()
+        tickerReturns = DF['r(t+1)'].to_numpy()
         modelReturns = tickerReturns * (P - 1)
         tickerEDR = tickerReturns.mean()
         modelEDR = modelReturns.mean()
@@ -125,6 +127,7 @@ class svmTrder:
         modelSharpe = self.Sharpe(modelReturns)
         tickerSortino = self.Sortino(tickerReturns)
         modelSortino = self.Sortino(modelReturns)
+
         print('_' * 60)
         print(f'Model Report On {Dataset} Dataset:')
         print(f'Classification Report:\n{CR}')
@@ -143,47 +146,50 @@ class svmTrder:
         print(f'Ticker Sortino: {tickerSortino:.2f}')
         print(f'Model Sortino: {modelSortino:.2f}')
         print('_' * 60)
-    def PlotCumulativeReturns(self,
-                              DF:pd.DataFrame,
-                              Dataset:str) -> None:
+
+    def PlotCumulativeReturns(self, DF: pd.DataFrame, Dataset: str) -> None:
         DF, FNs, _ = self.ProcessDataset(DF)
-        X0 = DF.loc[:, FNs].to_numpy()
+        if len(DF) == 0:
+            print(f'[WARNING] Skipping PlotCumulativeReturns: no data for {Dataset}')
+            return
+        X0 = DF[FNs].to_numpy()
         X = self.Scaler.transform(X0)
         P = self.Model.predict(X)
-        tickerReturns = 100 * DF.loc[:, 'r(t+1)'].to_numpy()
+
+        tickerReturns = 100 * DF['r(t+1)'].to_numpy()
         modelReturns = tickerReturns * (P - 1)
-        tickerCmulativeReturns = np.cumsum(tickerReturns)
-        modelCmulativeReturns = np.cumsum(modelReturns)
-        plt.plot(DF.index, tickerCmulativeReturns,
-                 ls='-', lw=1, c='teal', label='Ticker')
-        plt.plot(DF.index, modelCmulativeReturns,
-                 ls='-', lw=1, c='crimson', label='Model')
+        tickerCumulativeReturns = np.cumsum(tickerReturns)
+        modelCumulativeReturns = np.cumsum(modelReturns)
+
+        plt.plot(DF.index, tickerCumulativeReturns, ls='-', lw=1, c='teal', label='Ticker')
+        plt.plot(DF.index, modelCumulativeReturns, ls='-', lw=1, c='crimson', label='Model')
         plt.title(f'Cumulative Summation Of Returns For {Dataset} Dataset')
         plt.xlabel('Date')
         plt.ylabel('Return (%)')
         plt.legend()
         plt.show()
-    def PlotTrades(self,
-                   DF:pd.DataFrame,
-                   Dataset:str) -> None:
+
+    def PlotTrades(self, DF: pd.DataFrame, Dataset: str) -> None:
         DF, FNs, _ = self.ProcessDataset(DF)
-        X0 = DF.loc[:, FNs].to_numpy()
+        if len(DF) == 0:
+            print(f'[WARNING] Skipping PlotTrades: no data for {Dataset}')
+            return
+        X0 = DF[FNs].to_numpy()
         X = self.Scaler.transform(X0)
         P = self.Model.predict(X)
+
         sMask = P == 0
         hMask = P == 1
         bMask = P == 2
-        plt.plot(DF.index, DF.loc[:, 'Close'],
-                 ls='-', lw=0.8, c='k', label='Close')
-        plt.scatter(DF.index[sMask], DF.loc[sMask, 'Close'],
-                    s=40, c='r', alpha=0.8, label='Sell')
-        plt.scatter(DF.index[hMask], DF.loc[hMask, 'Close'],
-                    s=20, c='gray', alpha=0.8, label='Hold')
-        plt.scatter(DF.index[bMask], DF.loc[bMask, 'Close'],
-                    s=40, c='g', alpha=0.8, label='Buy')
+
+        plt.plot(DF.index, DF['Close'], ls='-', lw=0.8, c='k', label='Close')
+        plt.scatter(DF.index[sMask], DF.loc[sMask, 'Close'], s=40, c='r', alpha=0.8, label='Sell')
+        plt.scatter(DF.index[hMask], DF.loc[hMask, 'Close'], s=20, c='gray', alpha=0.8, label='Hold')
+        plt.scatter(DF.index[bMask], DF.loc[bMask, 'Close'], s=40, c='g', alpha=0.8, label='Buy')
+
         for lEMA in self.lEMAs:
-            plt.plot(DF.index, DF.loc[:, f'EMA({lEMA})'],
-                     ls='--', lw=1.2, label=f'EMA({lEMA})')
+            plt.plot(DF.index, DF[f'EMA({lEMA})'], ls='--', lw=1.2, label=f'EMA({lEMA})')
+
         plt.title(f'Model Trades History For {Dataset} Dataset')
         plt.xlabel('Date')
         plt.ylabel('Price')
@@ -191,30 +197,18 @@ class svmTrder:
         plt.legend()
         plt.show()
 
-def Fetch(Ticker:str, Start:str, End:str) -> pd.DataFrame:
-    if not os.path.exists(path='Data'):
-        os.mkdir(path='Data')
+def Fetch(Ticker: str, Start: str, End: str) -> pd.DataFrame:
+    if not os.path.exists('Data'):
+        os.mkdir('Data')
     SavePath = f'Data/{Ticker}-{Start}-{End}.csv'
-    if not os.path.exists(path=SavePath):
-        DF = yf.download(tickers=Ticker,
-                         start=Start,
-                         end=End,
-                         interval='1d')
+    if not os.path.exists(SavePath):
+        DF = yf.download(tickers=Ticker, start=Start, end=End, interval='1d')
         if len(DF) > 0:
-            DF.to_csv(path_or_buf=SavePath,
-                      sep=',',
-                      index=True,
-                      index_label='Date',
-                      encoding='UTF-8')
+            DF.to_csv(SavePath, sep=',', index=True, index_label='Date', encoding='UTF-8')
     else:
-        DF = pd.read_csv(filepath_or_buffer=SavePath,
-                         sep=',',
-                         header=0,
-                         index_col='Date',
-                         encoding='UTF-8')
+        DF = pd.read_csv(SavePath, sep=',', header=0, index_col='Date', encoding='UTF-8')
         DF.index = pd.to_datetime(DF.index)
     return DF
-
 
 trDF = Fetch('BTC-USD', '2017-01-01', '2020-01-01')
 vaDF = Fetch('BTC-USD', '2020-01-01', '2022-01-01')
@@ -222,20 +216,22 @@ teDF = Fetch('BTC-USD', '2022-01-01', '2023-07-07')
 
 lEMAs = [15, 35]
 lSTCs = [10, 21]
-TH = 1 # In Percentage
+TH = 1
 ntd = 252.03
-rfr = 10 # In Percentage
-H = {'C': [1.1],
-     'kernel': ['poly'],
-     'degree': [3, 4],
-     'gamma': ['scale'],
-     'coef0': [+0.2, +0.3],
-     'class_weight': ['balanced'],
-     'max_iter': [-1, 700]}
+rfr = 10
+
+H = {
+    'C': [1.1],
+    'kernel': ['poly'],
+    'degree': [3, 4],
+    'gamma': ['scale'],
+    'coef0': [+0.2, +0.3],
+    'class_weight': ['balanced'],
+    'max_iter': [-1, 700]
+}
 
 Trader = svmTrder(lEMAs, lSTCs, TH, ntd, rfr)
 Trader.Fit(trDF, vaDF, H)
-
 Trader.Evaluate(teDF, 'Test')
 Trader.PlotCumulativeReturns(teDF, 'Test')
 Trader.PlotTrades(teDF, 'Test')
